@@ -32,3 +32,27 @@ jobs:
         run: |
           aws s3 sync ./ s3://${{ secrets.S3_BUCKET_NAME }}/ \
             --delete
+
+
+
+
+                   
+       echo "BUCKET_NAME=static-site-${{ github.run_id }}" >> $GITHUB_ENV
+       
+   - name: Upload/Copy the contect in bucket
+     run: |
+       aws s3 sync ./ s3://{{ secert.S3_BUCKET_NAME }}/ \
+       
+      
+        
+   - name: Create Origin Access Control
+     id: create_oc
+     run: |
+       OAC_ID=$(aws cloudfront create-origin-access-control \
+         --origin-access-control-config '{
+           "Name": "MyOAC"
+           "SigningProtocal": "sigv4"
+           "SigningBehaviour": "always",
+           "OgininAccessControlOrginType": "s3"
+       }' \
+        --query "")
