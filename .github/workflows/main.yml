@@ -1,0 +1,34 @@
+name: Static website using AWS S3 via CloudFront
+
+on:
+  push:
+    branches:
+      - main   # <-- should be 'branches', not 'branch'
+
+jobs:
+  object-push-into-aws-s3:
+    name: Static website push
+    runs-on: ubuntu-latest   # <-- replace 'runners' with 'ubuntu-latest'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4   # <-- correct version tag
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # <-- fixed typo 'secert'
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Create new bucket (if not exists)
+        run: |
+          aws s3api create-bucket \
+            --bucket ${{ secrets.S3_BUCKET_NAME }} \
+            --region ${{ secrets.AWS_REGION }} \
+            --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }} || true
+
+      - name: Upload/Copy the content to bucket
+        run: |
+          aws s3 sync ./ s3://${{ secrets.S3_BUCKET_NAME }}/ \
+            --delete
