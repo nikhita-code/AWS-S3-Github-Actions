@@ -1,1 +1,57 @@
+name: Static website using AWS S3 via Cloudfront.
 
+on: 
+  push:
+     branch : main
+     
+jobs: 
+  Object-push-into-aws-s3:
+  name: Static website push 
+  runs-on: runners
+  
+  env:
+  S3_AWS_BUCKET : aws-s3-github1234
+  steps:
+   - name: Checkout code
+     uses: actions/checkout@main
+     
+   - name: Configure AWS credentials
+     uses: aws-actions/configure-aws-credentials@v4
+     with:
+       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+       aws-secert-access-key: ${{ secerts.AWS_SECRET_ACCESS_KEY }}
+       aws-region: ${{ env.AWS_REGION }}
+     
+   - name: Create new bucket and copy to bucket in S3bucket
+     run: |
+       aws s3api create-bucket \
+       --bucket ${{ secert.S3_BUCKET_NAME }} 
+       --region ${{ env.AWS_REGION }}
+       
+   - name: Upload/Copy the contect in bucket
+     run: |
+       aws s3 sync ./ s3://{{ secert.S3_BUCKET_NAME }}/ \
+        --delete
+       
+       
+     
+       
+       
+     
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+  
