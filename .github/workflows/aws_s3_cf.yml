@@ -114,6 +114,13 @@ jobs:
         run: |
           REGION="${{ secrets.AWS_REGION }}"
           BUCKET="${{ needs.s3-with-oac.outputs.bucket_name }}"
+
+          if [ "$REGION" = "us-east-1" ]; then
+            ORIGIN_DOMAIN="$BUCKET.s3.amazonaws.com"
+          else
+            ORIGIN_DOMAIN="$BUCKET.s3.$REGION.amazonaws.com"
+          fi
+          
           DIST_ID=$(aws cloudfront create-distribution \
             --distribution-config "{
               \"CallerReference\": \"my-static-site-001\",
@@ -124,7 +131,7 @@ jobs:
                 \"Items\": [
                   {
                     \"Id\": \"S3Origin\",
-                    \"DomainName\": \"$BUCKET.s3.$REGION.amazonaws.com\",
+                    \"DomainName\": \"$ORIGIN_DOMAIN\",
                     \"OriginAccessControlId\": \"${{ needs.s3-with-oac.outputs.oac_id }}\"
                   }
                 ]
