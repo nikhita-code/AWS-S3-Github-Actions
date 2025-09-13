@@ -31,9 +31,7 @@ jobs:
             echo "Bucket $BUCKET already exists. Reusing."
           else
             aws s3api create-bucket \
-              --bucket "$BUCKET" \
-              --region ${{ secrets.AWS_REGION }} \
-              --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+              --bucket "$BUCKET" 
             echo "Created new bucket: $BUCKET"
           fi
 
