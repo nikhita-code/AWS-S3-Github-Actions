@@ -1,3 +1,4 @@
+
 name: Static website using AWS S3 via CloudFront
 
 on:
@@ -34,10 +35,6 @@ jobs:
               --bucket "$BUCKET" 
             echo "Created new bucket: $BUCKET"
           fi
-
-          aws s3api put-public-access-block \
-            --bucket "$BUCKET" \
-            --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
           echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
 
