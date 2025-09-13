@@ -1,4 +1,4 @@
-name: AWS S3 via CloudFront
+name: Static website using AWS S3 via CloudFront
 
 on:
   push:
@@ -36,20 +36,25 @@ jobs:
               --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
             echo "Created new bucket: $BUCKET"
           fi
+
           aws s3api put-public-access-block \
             --bucket "$BUCKET" \
             --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
           echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
+
       - name: Upload website files to S3
         run: |
           BUCKET="${{ steps.s3.outputs.bucket_name }}"
           aws s3 cp index.html s3://"$BUCKET"/index.html
+
       - name: Create or reuse Origin Access Control (OAC)
         id: oac
         run: |
           EXISTING_OAC=$(aws cloudfront list-origin-access-controls \
             --query "OriginAccessControlList.Items[?Name=='MyOAC'].Id" \
             --output text)
+
           if [ -n "$EXISTING_OAC" ]; then
             echo "Reusing existing OAC: $EXISTING_OAC"
             OAC_ID=$EXISTING_OAC
@@ -59,7 +64,9 @@ jobs:
               --query "OriginAccessControl.Id" --output text)
             echo "Created new OAC: $OAC_ID"
           fi
+
           echo "oac_id=$OAC_ID" >> $GITHUB_OUTPUT
+
       - name: Attach minimal bucket policy for CloudFront
         run: |
           BUCKET="${{ steps.s3.outputs.bucket_name }}"
@@ -85,7 +92,6 @@ jobs:
               ]
             }
             EOF
-
           aws s3api put-bucket-policy --bucket "$BUCKET" --policy file://bucket-policy.json
 
   deploy-cloudfront:
@@ -107,12 +113,39 @@ jobs:
         id: cf
         run: |
           DIST_ID=$(aws cloudfront create-distribution \
-            --distribution-config "{\"CallerReference\":\"my-static-site-001\",\"Comment\":\"Static site with OAC\",\"Enabled\":true,\"Origins\":{\"Quantity\":1,\"Items\":[{\"Id\":\"S3Origin\",\"DomainName\":\"${{ needs.s3-with-oac.outputs.bucket_name }}.s3.amazonaws.com\",\"OriginAccessControlId\":\"${{ needs.s3-with-oac.outputs.oac_id }}\"}]},\"DefaultCacheBehavior\":{\"TargetOriginId\":\"S3Origin\",\"ViewerProtocolPolicy\":\"redirect-to-https\",\"AllowedMethods\":{\"Quantity\":2,\"Items\":[\"GET\",\"HEAD\"]},\"CachedMethods\":{\"Quantity\":2,\"Items\":[\"GET\",\"HEAD\"]},\"ForwardedValues\":{\"QueryString\":false,\"Cookies\":{\"Forward\":\"none\"}},\"MinTTL\":0}}" \
+            --distribution-config "{
+              \"CallerReference\": \"my-static-site-001\",
+              \"Comment\": \"Static site with OAC\",
+              \"Enabled\": true,
+              \"Origins\": {
+                \"Quantity\": 1,
+                \"Items\": [
+                  {
+                    \"Id\": \"S3Origin\",
+                    \"DomainName\": \"${{ needs.s3-with-oac.outputs.bucket_name }}.s3.amazonaws.com\",
+                    \"OriginAccessControlId\": \"${{ needs.s3-with-oac.outputs.oac_id }}\"
+                  }
+                ]
+              },
+              \"DefaultCacheBehavior\": {
+                \"TargetOriginId\": \"S3Origin\",
+                \"ViewerProtocolPolicy\": \"redirect-to-https\",
+                \"AllowedMethods\": {
+                  \"Quantity\": 2,
+                  \"Items\": [\"GET\", \"HEAD\"]
+                },
+                \"ForwardedValues\": {
+                  \"QueryString\": false,
+                  \"Cookies\": {\"Forward\": \"none\"}
+                },
+                \"MinTTL\": 0
+              }
+            }" \
             --query "Distribution.Id" --output text)
           echo "dist_id=$DIST_ID" >> $GITHUB_OUTPUT
+
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
             --distribution-id ${{ steps.cf.outputs.dist_id }} \
             --paths "/*"
-
