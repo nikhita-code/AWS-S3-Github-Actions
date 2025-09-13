@@ -3,195 +3,73 @@ name: Static website using AWS S3 via CloudFront
 on:
   push:
     branches:
-      - main   # <-- should be 'branches', not 'branch'
+      - main
 
 jobs:
-  object-push-into-aws-s3:
-    name: Static website push
-    runs-on: ubuntu-latest   # <-- replace 'runners' with 'ubuntu-latest'
-
+  s3-with-oac:
+    runs-on: ubuntu-latest
+    outputs:
+      bucket_name: ${{ steps.s3.outputs.bucket_name }}
+      oac_id: ${{ steps.oac.outputs.oac_id }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4   # <-- correct version tag
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # <-- fixed typo 'secert'
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create new bucket (if not exists)
+      - name: Create new bucket
+        id: s3
         run: |
-          aws s3api create-bucket \
-            --bucket ${{ secrets.S3_BUCKET_NAME }} \
-            --region ${{ secrets.AWS_REGION }} \
-            --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }} || true
+          BUCKET="${{ secrets.S3_BUCKET_NAME }}"
+          aws s3api create-bucket --bucket $BUCKET --region ${{ secrets.AWS_REGION }} --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }} || true
+          aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+          echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
 
-      - name: Upload/Copy the content to bucket
+      - name: Create Origin Access Control (OAC)
+        id: oac
         run: |
-          aws s3 sync ./ s3://${{ secrets.S3_BUCKET_NAME }}/ \
-            --delete
+          OAC_ID=$(aws cloudfront create-origin-access-control \
+            --origin-access-control-config '{"Name":"MyOAC","Description":"OAC for private S3 bucket","SigningProtocol":"sigv4","SigningBehavior":"always","OriginAccessControlOriginType":"s3"}' \
+            --query "OriginAccessControl.Id" --output text)
+          echo "oac_id=$OAC_ID" >> $GITHUB_OUTPUT
+
+      - name: Attach minimal bucket policy
+        run: |
+          BUCKET=${{ steps.s3.outputs.bucket_name }}
+          OAC_ID=${{ steps.oac.outputs.oac_id }}
+          echo '{"Version":"2012-10-17","Statement":[{"Sid":"AllowCloudFrontRead","Effect":"Allow","Principal":{"Service":"cloudfront.amazonaws.com"},"Action":"s3:GetObject","Resource":"arn:aws:s3:::'"$BUCKET"'/*","Condition":{"StringEquals":{"AWS:SourceArn":"arn:aws:cloudfront::'"${{ secrets.AWS_ACCOUNT_ID }}"':origin-access-control/'"$OAC_ID"'"}}}]}]' > bucket-policy.json
+          aws s3api put-bucket-policy --bucket $BUCKET --policy file://bucket-policy.json
 
 
+  deploy-cloudfront:
+    runs-on: ubuntu-latest
+    needs: s3-with-oac
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-                   
-       echo "BUCKET_NAME=static-site-${{ github.run_id }}" >> $GITHUB_ENV
-       
-   - name: Upload/Copy the contect in bucket
-     run: |
-       aws s3 sync ./ s3://{{ secert.S3_BUCKET_NAME }}/ \
-       
-      
-        
-   - name: Create Origin Access Control
-     id: create_oc
-     run: |
-       OAC_ID=$(aws cloudfront create-origin-access-control \
-         --origin-access-control-config '{
-           "Name": "MyOAC"
-           "SigningProtocal": "sigv4"
-           "SigningBehaviour": "always",
-           "OgininAccessControlOrginType": "s3"
-       }' \
-        --query "")
+      - name: Create CloudFront distribution
+        id: cf
+        run: |
+          DIST_ID=$(aws cloudfront create-distribution \
+            --distribution-config "{\"CallerReference\":\"my-static-site-001\",\"Comment\":\"Static site with OAC\",\"Enabled\":true,\"Origins\":{\"Quantity\":1,\"Items\":[{\"Id\":\"S3Origin\",\"DomainName\":\"${{ needs.s3-with-oac.outputs.bucket_name }}.s3.amazonaws.com\",\"OriginAccessControlId\":\"${{ needs.s3-with-oac.outputs.oac_id }}\"}]},\"DefaultCacheBehavior\":{\"TargetOriginId\":\"S3Origin\",\"ViewerProtocolPolicy\":\"redirect-to-https\",\"AllowedMethods\":{\"Quantity\":2,\"Items\":[\"GET\",\"HEAD\"]},\"CachedMethods\":{\"Quantity\":2,\"Items\":[\"GET\",\"HEAD\"]},\"ForwardedValues\":{\"QueryString\":false,\"Cookies\":{\"Forward\":\"none\"}},\"MinTTL\":0}}" \
+            --query "Distribution.Id" --output text)
+          echo "dist_id=$DIST_ID" >> $GITHUB_OUTPUT
 
+      - name: Upload website files
+        run: aws s3 index.html s3://${{ needs.s3-with-oac.outputs.bucket_name }}/index.html
 
-
-        name: Static website using AWS S3 via Cloudfront.
-
-on: 
-  push:
-     branch : main
-     
-jobs: 
-  s3-with-oac:
-  name: Static website push 
-  runs-on: runners
-
-  steps:
-   - name: Checkout code
-     uses: actions/checkout@main
-     
-   - name: Configure AWS credentials
-     uses: aws-actions/configure-aws-credentials@v4
-     with:
-       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-       aws-secert-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-       aws-region: ${{ secrets.AWS_REGION }}
-     
-   - name: Create new bucket and copy to bucket in S3bucket
-     id: s3-bucket
-     run: |
-       BUCKET=${{ secrets.S3_BUCKET_NAME }}
-       aws s3api create-bucket \
-       --bucket $BUCKET \
-       --region ${{ secrets.AWS_REGION }}
-       
-       echo "BUCKET_NAME=$BUCKET" >> $GITHUB.OUTPUT
-       
-               
-   - name: Create Origin Access Control
-     id: create_oc
-     run: |
-       OAC_ID=$(aws cloudfront list-orgin-access-controls \
-        --query "OriginAccessControlList.Items['MyOAC'].Id" \
-        --output text)
-        
-        OAC_ID=$(aws cloudfront create-origin-access-control \
-         --origin-access-control-config '{
-           "Name": "MyOAC"
-           "SigningBehaviour": "always",
-           "OriginAccessControlOrginType": "s3"
-       }' \
-        --query "OriginAccessControl.Id" --output text)
-        else
-         echo "OAC already exists:$OAC_ID"
-        fi
-        
-        echo "OAC_ID=$OAC_ID" >> $GITHUB.OUTPUT
-        
-   - name: Attach Bucket policy for OAC
-     run: |
-       BUCKET=${{ steps.s3.outputs.bucket_name }}
-       OAC_ID=${{ steps.oac.outputs.oac_id }}
-          echo '{"Version":"2012-10-17","Statement":[{"Sid":"AllowCloudFrontRead","Effect":"Allow","Principal": {"Service":"cloudfront.amazonaws.com"},"Action":"s3:GetObject","Resource":"arn:aws:s3:::'"$BUCKET"'/*","Condition":{"StringEquals":{"AWS:SourceArn":"arn:aws:cloudfront::'"${{ secrets.AWS_ACCOUNT_ID }}"':origin-access-control/'"$OAC_ID"'"}}}]}]' > bucket-policy.json
-       aws s3api put-bucket-policy --bucket $BUCKET --policy file://bucket-policy.json
-        
-deploy-cloufront:
-     runs-on: ubuntu-latest
-     needs: s3-with-oac
-     steps: 
-         - name: Checkout code
-           uses: actions/checkout@main
-     
-         - name: Configure AWS credentials
-           uses: aws-actions/configure-aws-credentials@v4
-             with:
-               aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-               aws-secert-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-               aws-region: ${{ secrets.AWS_REGION }}
-               
-        - name: Attaching OAC to newly created Distribution
-          id: cf_id
-          run: |
-          DIST_ID=$(aws create-cloud-distribution 
-           --distribution-config "{
-           \"CallerReference\": \"my-static-site-001\",
-           \"Enabled\": true,
-           \"Origins\": {
-           \"Quantity\": 1,
-           \"Items\": [
-            {
-              \"Id\": \"S3Origin\",
-              \"DomainName\": \"${{ needs.create-s3.outputs.bucket_name }}.s3.amazonaws.com\",
-              \"OriginAccessControlId\": \"${{ needs.create-oac.outputs.oac_id }}\"
-              }
-             ]
-            },
-           \"DefaultCacheBehavior\": {
-           \"TargetOriginId\": \"S3Origin\",
-           \"ViewerProtocolPolicy\": \"redirect-to-https\",
-           \"AllowedMethods\": {\"Quantity\": 2,\"Items\": [\"GET\",\"HEAD\"]},
-           \"CachedMethods\": {\"Quantity\": 2,\"Items\": [\"GET\",\"HEAD\"]},
-           \"ForwardedValues\": {\"QueryString\": false,\"Cookies\": {\"Forward\": \"none\"}},
-           \"MinTTL\": 0
-          }
-        }" \
-       --query "Distribution.Id" --output text)
-       
-       echo "Distribution_Id=$DIS_ID" >> $GITHUB.OUTPUT
-
-
-        - name: Upload/Copy the contect in bucket
-          run: |
-            aws s3 cp index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html
-
-        -name: Invalidate Cloudfron cashe
-         run: aws cloudfront create-inavlidation --distribution-d ${{ steps.cf_id.outputs.Distribution_Id }}
-
-            
-       
-       
-     
-       
-       
-     
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-  
+      - name: Invalidate CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id ${{ steps.cf.outputs.dist_id }} --paths "/*"
