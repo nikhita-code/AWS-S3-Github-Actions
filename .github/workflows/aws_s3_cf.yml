@@ -115,6 +115,8 @@ jobs:
           else
             ORIGIN_DOMAIN="$BUCKET.s3.$REGION.amazonaws.com"
           fi
+
+          sleep 10
           
           DIST_ID=$(aws cloudfront create-distribution \
             --distribution-config "{
