@@ -27,21 +27,20 @@ jobs:
         run: |
           BUCKET="${{ secrets.S3_BUCKET_NAME }}"
           aws s3api create-bucket \
-            --bucket $BUCKET \
+            --bucket "$BUCKET" \
             --region ${{ secrets.AWS_REGION }} \
             --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }} || true
-
+          
           aws s3api put-public-access-block \
-            --bucket $BUCKET \
+            --bucket "$BUCKET" \
             --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
-          # Output bucket name
           echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
 
       - name: Upload website files to S3
         run: |
-          BUCKET="${{ secrets.S3_BUCKET_NAME }}"
-          aws s3 cp index.html s3://$BUCKET/index.html
+          BUCKET="${{ steps.s3.outputs.bucket_name }}"
+          aws s3 cp index.html s3://"$BUCKET"/index.html
 
       - name: Create or reuse Origin Access Control (OAC)
         id: oac
@@ -66,24 +65,30 @@ jobs:
         run: |
           BUCKET="${{ steps.s3.outputs.bucket_name }}"
           OAC_ID="${{ steps.oac.outputs.oac_id }}"
-          echo '{
-            "Version":"2012-10-17",
-            "Statement":[
-              {
-                "Sid":"AllowCloudFrontRead",
-                "Effect":"Allow",
-                "Principal":{"Service":"cloudfront.amazonaws.com"},
-                "Action":"s3:GetObject",
-                "Resource":"arn:aws:s3:::'"$BUCKET"'/*",
-                "Condition":{
-                  "StringEquals":{
-                    "AWS:SourceArn":"arn:aws:cloudfront::'"${{ secrets.AWS_ACCOUNT_ID }}"':origin-access-control/'"$OAC_ID"'"
-                  }
-                }
-              }
-            ]
-          }' > bucket-policy.json
-          aws s3api put-bucket-policy --bucket $BUCKET --policy file://bucket-policy.json
+
+          cat <<EOF > bucket-policy.json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudFrontRead",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::$BUCKET/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::${{ secrets.AWS_ACCOUNT_ID }}:origin-access-control/$OAC_ID"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+          aws s3api put-bucket-policy --bucket "$BUCKET" --policy file://bucket-policy.json
 
   deploy-cloudfront:
     runs-on: ubuntu-latest
