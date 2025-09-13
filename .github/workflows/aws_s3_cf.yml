@@ -7,7 +7,7 @@ on:
 
 jobs:
   s3-with-oac:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest 
     outputs:
       bucket_name: ${{ steps.s3.outputs.bucket_name }}
       oac_id: ${{ steps.oac.outputs.oac_id }}
