@@ -11,6 +11,7 @@ jobs:
     outputs:
       bucket_name: ${{ steps.s3.outputs.bucket_name }}
       oac_id: ${{ steps.oac.outputs.oac_id }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,15 +23,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create new bucket
+      - name: Create new bucket or reuse existing
         id: s3
         run: |
           BUCKET="${{ secrets.S3_BUCKET_NAME }}"
-          aws s3api create-bucket \
-            --bucket "$BUCKET" \
-            --region ${{ secrets.AWS_REGION }} \
-            --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }} || true
-          
+          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "Bucket $BUCKET already exists. Reusing."
+          else
+            aws s3api create-bucket \
+              --bucket "$BUCKET" \
+              --region ${{ secrets.AWS_REGION }} \
+              --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+            echo "Created new bucket: $BUCKET"
+          fi
+
           aws s3api put-public-access-block \
             --bucket "$BUCKET" \
             --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
@@ -65,7 +71,6 @@ jobs:
         run: |
           BUCKET="${{ steps.s3.outputs.bucket_name }}"
           OAC_ID="${{ steps.oac.outputs.oac_id }}"
-
           cat <<EOF > bucket-policy.json
 {
   "Version": "2012-10-17",
@@ -93,6 +98,7 @@ EOF
   deploy-cloudfront:
     runs-on: ubuntu-latest
     needs: s3-with-oac
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
