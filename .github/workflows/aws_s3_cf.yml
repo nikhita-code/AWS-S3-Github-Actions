@@ -1,4 +1,4 @@
-name: Static website using AWS S3 via CloudFront
+name: AWS S3 via CloudFront
 
 on:
   push:
