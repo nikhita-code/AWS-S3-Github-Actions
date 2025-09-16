@@ -6,7 +6,7 @@ on:
          - main
 
 jobs:
-  aws-s3-cloudfront:
+  aws-s3-cloudfront: 
     runs-on: ubuntu-latest
 
     steps:
