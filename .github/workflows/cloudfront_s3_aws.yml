@@ -2,7 +2,7 @@ name: Static website through cloudfront in AWS!!
 
 on:
   push:
-    branches:
+    branches: 
          - main
 
 jobs:
